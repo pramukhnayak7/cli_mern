@@ -36,7 +36,7 @@ class _HomePageState extends State<HomePage> {
   String _status = 'Starting server...';
   HttpServer? _server;
 
-  static const String serverJsCode = '''const http = require('http');
+  static const String serverJsCode = r'''const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -67,7 +67,7 @@ const server = http.createServer((req, res) => {
   if (url === '/server.js' && req.method === 'GET') {
     if (!isCurl(req)) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found\\n');
+      res.end('Not found\n');
       console.log('[' + ip + '] 404 /server.js (browser blocked)');
       return;
     }
@@ -78,19 +78,19 @@ const server = http.createServer((req, res) => {
       console.log('[' + ip + '] 200 /server.js (curl download)');
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found\\n');
+      res.end('Not found\n');
     }
     return;
   }
 
   // Serve raw program text: /p1, /p2, ...
-  const m = url.match(/^\\/p(\\d+)\\$/);
+  const m = url.match(/^\/p(\d+)$/);
   if (m && req.method === 'GET') {
     const file = path.join(DIR, 'p' + m[1] + '.txt');
     fs.readFile(file, 'utf8', (err, data) => {
       if (err) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Program ' + m[1] + ' not found\\n');
+        res.end('Program ' + m[1] + ' not found\n');
         console.log('[' + ip + '] 404 /p' + m[1]);
         return;
       }
@@ -103,7 +103,7 @@ const server = http.createServer((req, res) => {
 
   // Everything else: 404 (no browser pages, no editor)
   res.writeHead(404, { 'Content-Type': 'text/plain' });
-  res.end('Not found\\n');
+  res.end('Not found\n');
   console.log('[' + ip + '] 404 ' + url);
 });
 
