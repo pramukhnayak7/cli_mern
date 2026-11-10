@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(const ProgServerApp());
@@ -181,6 +182,14 @@ server.listen(PORT, '0.0.0.0', () => {
 
   Future<void> _init() async {
     await WakelockPlus.enable();
+
+    // Start foreground service so server stays alive in background like Termux
+    const MethodChannel channel = MethodChannel('prog_server/background');
+    try {
+      await channel.invokeMethod('startForegroundService');
+    } catch (e) {
+      debugPrint('Failed to start foreground service: $e');
+    }
 
     _dir = await getApplicationDocumentsDirectory();
     await _ensureDefaults();

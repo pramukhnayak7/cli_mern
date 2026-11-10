@@ -5,14 +5,10 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-  <!-- Read/write external storage for Downloads folder -->
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
       android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
       android:maxSdkVersion="32" />
-  <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-  <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
   <application
       android:label="prog_server"
@@ -27,7 +23,8 @@
           android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
           android:hardwareAccelerated="true"
           android:windowSoftInputMode="adjustResize"
-          android:keepScreenOn="true">
+          android:keepScreenOn="true"
+          android:stopWithTask="false">
           <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme" />
@@ -36,6 +33,13 @@
               <category android:name="android.intent.category.LAUNCHER"/>
           </intent-filter>
       </activity>
+
+      <!-- Foreground service so the server keeps running in background like Termux -->
+      <service
+          android:name="com.example.prog_server.BackgroundServerService"
+          android:foregroundServiceType="dataSync"
+          android:exported="false" />
+
       <meta-data
           android:name="flutterEmbedding"
           android:value="2" />
