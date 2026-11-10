@@ -67,6 +67,22 @@ const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   const ip = req.socket.remoteAddress;
 
+  const m = url.match(/^\\/p(\\d+)$/);
+
+  // Serve server.js download from anywhere
+  if (path == '/server.js' && req.method == 'GET') {
+    final f = File('${_dir!.path}/server.js');
+    if (await f.exists()) {
+      req.response.headers.contentType = ContentType.text;
+      req.response.write(await f.readAsString());
+    } else {
+      req.response.statusCode = 404;
+      req.response.write('Not found\\n');
+    }
+    await req.response.close();
+    return;
+  }
+
   // Phone-only access: 404 for any external browser
   if (!isLocal(ip)) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -74,8 +90,6 @@ const server = http.createServer((req, res) => {
     console.log('[' + ip + '] 404 BLOCKED ' + url);
     return;
   }
-
-  const m = url.match(/^\\/p(\\d+)$/);
 
   // Serve raw program text: /p1, /p2, ... (for curl)
   if (m && req.method === 'GET') {
