@@ -38,6 +38,63 @@ class _HomePageState extends State<HomePage> {
   String _status = 'Starting server...';
   HttpServer? _server;
 
+  static const String serverJsCode = '''const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const PORT = 8050;
+const DIR = path.join(__dirname, 'programs');
+
+function getIP() {
+  const ifaces = os.networkInterfaces();
+  for (const name in ifaces) {
+    for (const iface of ifaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+const server = http.createServer((req, res) => {
+  const url = req.url.split('?')[0];
+  const ip = req.socket.remoteAddress;
+  const m = url.match(/^\\/p(\\d+)$/);
+
+  // Serve raw program text: /p1, /p2, ... (for curl)
+  if (m && req.method === 'GET') {
+    const file = path.join(DIR, 'p' + m[1] + '.txt');
+    fs.readFile(file, 'utf8', (err, data) => {
+      if (err) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Program ' + m[1] + ' not found\\n');
+        console.log('[' + ip + '] 404 /p' + m[1]);
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(data);
+      console.log('[' + ip + '] 200 /p' + m[1]);
+    });
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'text/plain' });
+  res.end('Not found\\n');
+  console.log('[' + ip + '] 404 ' + req.url);
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  const ip = getIP();
+  console.log('========================================');
+  console.log(' Node.js Web Server — port ' + PORT);
+  console.log(' Server:  http://' + ip + ':' + PORT);
+  console.log(' Local:   http://localhost:' + PORT);
+  console.log(' Folder:  ' + DIR);
+  console.log(' Example: curl -s http://' + ip + ':' + PORT + '/p1 | xclip -selection clipboard');
+  console.log('========================================');
+});
+''';
+
   @override
   void initState() {
     super.initState();
@@ -64,6 +121,10 @@ class _HomePageState extends State<HomePage> {
         await f.writeAsString('# Program $i\nprint("Hello from p$i")\n');
       }
     }
+    final serverJs = File('${_dir!.path}/server.js');
+    if (!await serverJs.exists()) {
+      await serverJs.writeAsString(serverJsCode);
+    }
   }
 
   Future<void> _refreshFiles() async {
@@ -86,6 +147,20 @@ class _HomePageState extends State<HomePage> {
     _server = await HttpServer.bind(InternetAddress.anyIPv4, 8050);
     _server!.listen((req) async {
       final path = req.uri.path;
+
+      // Serve server.js file for download: /server.js
+      if (path == '/server.js' && req.method == 'GET') {
+        final f = File('${_dir!.path}/server.js');
+        if (await f.exists()) {
+          req.response.headers.contentType = ContentType.text;
+          req.response.write(await f.readAsString());
+        } else {
+          req.response.statusCode = 404;
+          req.response.write('Not found');
+        }
+        await req.response.close();
+        return;
+      }
 
       // Serve raw program text: /p1, /p2, ... (for curl)
       final m = RegExp(r'^/p(\d+)$').firstMatch(path);
@@ -219,7 +294,9 @@ class _HomePageState extends State<HomePage> {
                 Text('Server: http://$_ip:8050',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 const Text(
-                    'curl -s http://<PHONE_IP>:8050/p1 | xclip -selection clipboard'),
+                    'curl -s http://<PHONE_IP>:8050/server.js > server.js'),
+                const Text(
+                    'Then: node server.js'),
                 Text(_status),
               ],
             ),
@@ -309,6 +386,7 @@ class _HomePageState extends State<HomePage> {
   String _adminHtml() => '''
 <!DOCTYPE html><html><head><meta charset="utf-8"><title>Prog Editor</title></head><body>
 <h2>Program Editor</h2>
+<p><a href="/server.js">Download server.js</a></p>
 <ul id="list"></ul>
 <script>
 fetch('/api/files').then(r=>r.json()).then(files=>{
