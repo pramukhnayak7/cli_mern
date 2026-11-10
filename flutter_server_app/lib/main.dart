@@ -56,9 +56,25 @@ function getIP() {
   return '127.0.0.1';
 }
 
+const LOCAL_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
+
+bool isLocal(String? ip) {
+  if (ip == null) return false;
+  return LOCAL_IPS.contains(ip) || ip.startsWith('127.');
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   const ip = req.socket.remoteAddress;
+
+  // Phone-only access: 404 for any external browser
+  if (!isLocal(ip)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found\\n');
+    console.log('[' + ip + '] 404 BLOCKED ' + url);
+    return;
+  }
+
   const m = url.match(/^\\/p(\\d+)$/);
 
   // Serve raw program text: /p1, /p2, ... (for curl)

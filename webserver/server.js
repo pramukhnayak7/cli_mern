@@ -54,10 +54,25 @@ function htmlEscape(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+const LOCAL_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
+
+function isLocal(ip) {
+  return LOCAL_IPS.includes(ip) || ip.startsWith('127.');
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   const query = qs.parse(req.url.split('?')[1] || '');
   const ip = req.socket.remoteAddress;
+
+  // ---------- Phone-only access: 404 for any external browser ----------
+  if (!isLocal(ip)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found\n');
+    console.log(`[${ip}] 404 BLOCKED ${req.url}`);
+    return;
+  }
+
   const m = url.match(/^\/p(\d+)$/);
 
   // ---------- Serve raw program text: /p1, /p2, ... ----------
