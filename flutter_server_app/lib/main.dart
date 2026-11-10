@@ -15,7 +15,7 @@ class ProgServerApp extends StatelessWidget {
     return MaterialApp(
       title: 'Prog Server',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, seedColor: Colors.deepPurple),
+      theme: ThemeData(useMaterial3: true, primarySwatch: Colors.deepPurple),
       home: const HomePage(),
     );
   }
@@ -86,9 +86,9 @@ class _HomePageState extends State<HomePage> {
     _server = await HttpServer.bind(InternetAddress.anyIPv4, 8050);
     _server!.listen((req) async {
       final path = req.uri.path;
-      final m = RegExp(r'^/p(\d+)$').firstMatch(path);
 
-      // ---------- Serve raw program text: /p1, /p2, ... (for curl) ----------
+      // Serve raw program text: /p1, /p2, ... (for curl)
+      final m = RegExp(r'^/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
         final f = File('${_dir!.path}/p${m.group(1)!}.txt');
         if (await f.exists()) {
@@ -102,7 +102,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // ---------- Admin web page served by the app itself ----------
+      // Admin web page served by the app itself
       if ((path == '/' || path == '/admin') && req.method == 'GET') {
         req.response.headers.contentType = ContentType.html;
         req.response.write(_adminHtml());
@@ -110,7 +110,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // ---------- API: list files ----------
+      // API: list files
       if (path == '/api/files' && req.method == 'GET') {
         final ents = await _dir!.list().toList();
         final list = ents
@@ -124,7 +124,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // ---------- API: get file ----------
+      // API: get file
       if (path.startsWith('/api/get/') && req.method == 'GET') {
         final name = path.substring('/api/get/'.length);
         final f = File('${_dir!.path}/$name');
@@ -138,7 +138,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // ---------- API: save file ----------
+      // API: save file
       if (path == '/api/save' && req.method == 'POST') {
         final body = await utf8.decoder.bind(req).join();
         final params = _parseQuery(body);
@@ -160,7 +160,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  bool _isValidFile(String f) => RegExp(r'^p\d+\.txt$').hasMatch(f);
+  bool _isValidFile(String name) => RegExp(r'^p\d+\.txt$').hasMatch(name);
 
   Map<String, String> _parseQuery(String body) {
     final map = <String, String>{};
@@ -230,12 +230,12 @@ class _HomePageState extends State<HomePage> {
                 : ListView.builder(
                     itemCount: _files.length,
                     itemBuilder: (_, i) {
-                      final f = _files[i];
+                      final fname = _files[i];
                       return ListTile(
                         leading: const Icon(Icons.code),
-                        title: Text(f),
-                        selected: _selected == f,
-                        onTap: () => _load(f),
+                        title: Text(fname),
+                        selected: _selected == fname,
+                        onTap: () => _load(fname),
                       );
                     },
                   ),
@@ -298,7 +298,7 @@ class _HomePageState extends State<HomePage> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           final newName = 'p${(_files.length + 1)}.txt';
-          _dir!.file(newName).writeAsStringSync('# $newName\n');
+          File('${_dir!.path}/$newName').writeAsStringSync('# $newName\n');
           _refreshFiles();
         },
         child: const Icon(Icons.add),
@@ -313,14 +313,14 @@ class _HomePageState extends State<HomePage> {
 <script>
 fetch('/api/files').then(r=>r.json()).then(files=>{
   const ul=document.getElementById('list');
-  files.forEach(f=>{
+  files.forEach(function(name){
     const li=document.createElement('li');
-    li.innerHTML='<a href="/p${f.replace(".txt","")}" target="_blank">'+f+'</a> ';
-    const b=document.createElement('button'); b.textContent='Edit'; b.onclick=()=>{
-      fetch('/api/get/'+f).then(r=>r.text()).then(c=>{
-        const nc=prompt('Edit '+f+':', c);
+    li.innerHTML='<a href="/p'+name.replace(".txt","")+'" target="_blank">'+name+'</a> ';
+    const b=document.createElement('button'); b.textContent='Edit'; b.onclick=function(){
+      fetch('/api/get/'+name).then(r=>r.text()).then(c=>{
+        const nc=prompt('Edit '+name+':', c);
         if(nc!==null){
-          fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'file='+encodeURIComponent(f)+'&content='+encodeURIComponent(nc)})
+          fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'file='+encodeURIComponent(name)+'&content='+encodeURIComponent(nc)})
             .then(()=>location.reload());
         }
       });
