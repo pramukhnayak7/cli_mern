@@ -286,13 +286,16 @@ server.listen(PORT, '0.0.0.0', () => {
       final apiUrl = Uri.https('api.github.com', '/repos/$ownerRepo/contents');
       final res = await http.get(
         apiUrl,
-        headers: {'Accept': 'application/vnd.github+json'},
+        headers: {
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'ProgServer-Flutter-App',
+        },
       ).timeout(const Duration(seconds: 15));
 
       if (res.statusCode != 200) {
         setState(() {
           _isSyncing = false;
-          _syncMsg = 'GitHub API error: ${res.statusCode}';
+          _syncMsg = 'GitHub API ${res.statusCode}: ${res.body}';
         });
         return;
       }
