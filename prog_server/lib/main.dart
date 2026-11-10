@@ -21,9 +21,6 @@ class ProgServerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, primarySwatch: Colors.deepPurple),
       home: const HomePage(),
-      routes: {
-        '/view': (context) => const ViewPage(),
-      },
     );
   }
 }
