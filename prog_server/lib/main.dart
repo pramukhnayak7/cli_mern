@@ -43,6 +43,7 @@ class _HomePageState extends State<HomePage> {
   );
   bool _isSyncing = false;
   String _syncMsg = '';
+  String _ownerRepo = '';
 
   static const String serverJsCode = r'''const http = require('http');
 const fs = require('fs');
@@ -273,11 +274,15 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     } catch (_) {}
     if (ownerRepo == null) {
-      setState(() => _syncMsg = 'Invalid GitHub URL');
+      setState(() {
+        _syncMsg = 'Invalid GitHub URL';
+        _ownerRepo = '';
+      });
       return;
     }
 
     setState(() {
+      _ownerRepo = ownerRepo;
       _isSyncing = true;
       _syncMsg = 'Fetching $ownerRepo...';
     });
@@ -292,6 +297,13 @@ server.listen(PORT, '0.0.0.0', () => {
         },
       ).timeout(const Duration(seconds: 15));
 
+      if (res.statusCode == 404) {
+        setState(() {
+          _isSyncing = false;
+          _syncMsg = '404: Repo "$ownerRepo" not found (check URL or make it public)';
+        });
+        return;
+      }
       if (res.statusCode != 200) {
         setState(() {
           _isSyncing = false;
@@ -396,12 +408,19 @@ server.listen(PORT, '0.0.0.0', () => {
                 ),
                 if (_syncMsg.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text('Repo: $_ownerRepo',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
                     child: Text(_syncMsg,
                         style: TextStyle(
                           color: _syncMsg.startsWith('Synced')
                               ? Colors.green
-                              : Colors.red,
+                          : _syncMsg.startsWith('404')
+                              ? Colors.orange
+                          : Colors.red,
                           fontSize: 12,
                         )),
                   ),
