@@ -362,9 +362,9 @@ server.listen(PORT, '0.0.0.0', () => {
     }
 
     setState(() {
-      _ownerRepo = ownerRepo;
+      _ownerRepo = ownerRepo ?? '';
       _isSyncing = true;
-      _syncMsg = 'Fetching $ownerRepo...';
+      _syncMsg = 'Fetching ${ownerRepo ?? ''}...';
     });
 
     try {
@@ -381,7 +381,7 @@ server.listen(PORT, '0.0.0.0', () => {
         setState(() {
           _isSyncing = false;
           _syncMsg =
-              '404: Repo "$ownerRepo" not found (check URL or make it public)';
+              '404: Repo "${ownerRepo ?? ''}" not found (check URL or make it public)';
         });
         return;
       }
@@ -419,7 +419,7 @@ server.listen(PORT, '0.0.0.0', () => {
       if (!mounted) return;
       setState(() {
         _isSyncing = false;
-        _syncMsg = 'Synced $count .txt files from $ownerRepo';
+        _syncMsg = 'Synced $count .txt files from ${ownerRepo ?? ''}';
       });
     } catch (e) {
       if (!mounted) return;
