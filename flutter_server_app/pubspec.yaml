@@ -1,5 +1,5 @@
 name: prog_server
-description: Android app that hosts a web server in background serving p1.txt, p2.txt, ...
+description: Android app that hosts a web server in background serving p1.txt, p2.txt, ... with curl-only download, GitHub sync, and phone-readable text files
 publish_to: 'none'
 version: 1.0.0+1
 

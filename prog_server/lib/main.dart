@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   runApp(const ProgServerApp());
@@ -20,6 +21,9 @@ class ProgServerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(useMaterial3: true, primarySwatch: Colors.deepPurple),
       home: const HomePage(),
+      routes: {
+        '/view': (context) => const ViewPage(),
+      },
     );
   }
 }
@@ -34,6 +38,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with WidgetsBindingObserver {
   Directory? _dir;
+  Directory? _downloadsDir;
   bool _serverStarted = false;
   String _ip = '...';
   List<String> _files = [];
@@ -160,7 +165,6 @@ server.listen(PORT, '0.0.0.0', () => {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Keep server running in background — do NOT dispose it
     if (state == AppLifecycleState.resumed) {
       debugPrint('App resumed');
     } else if (state == AppLifecycleState.inactive ||
@@ -180,7 +184,6 @@ server.listen(PORT, '0.0.0.0', () => {
 
     await _notifications.initialize(initializationSettings);
 
-    // Create notification channel for foreground service
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'prog_server_channel',
       'Prog Server',
@@ -193,7 +196,6 @@ server.listen(PORT, '0.0.0.0', () => {
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    // Show ongoing notification so Android doesn't kill the background process
     await _notifications.show(
       0,
       'Prog Server',
@@ -214,10 +216,15 @@ server.listen(PORT, '0.0.0.0', () => {
   }
 
   Future<void> _init() async {
-    // Keep phone awake so server doesn't die when screen locks
     await WakelockPlus.enable();
 
     _dir = await getApplicationDocumentsDirectory();
+    _downloadsDir = await getDownloadsDirectory();
+    if (_downloadsDir == null) {
+      // Fallback to app documents if Downloads not available
+      _downloadsDir = _dir;
+    }
+
     await _ensureDefaults();
     _refreshFiles();
     await _startServer();
@@ -232,14 +239,22 @@ server.listen(PORT, '0.0.0.0', () => {
 
   Future<void> _ensureDefaults() async {
     for (int i = 2; i <= 5; i++) {
-      final f = File('${_dir!.path}/p$i.txt');
-      if (!await f.exists()) {
-        await f.writeAsString('# Program $i\nprint("Hello from p$i")\n');
+      final content = '# Program $i\nprint("Hello from p$i")\n';
+      await File('${_dir!.path}/p$i.txt').writeAsString(content);
+      if (_downloadsDir != null) {
+        await File('${_downloadsDir!.path}/p$i.txt').writeAsString(content);
       }
     }
     final serverJs = File('${_dir!.path}/server.js');
     if (!await serverJs.exists()) {
       await serverJs.writeAsString(serverJsCode);
+    }
+  }
+
+  Future<void> _writeFile(String name, String content) async {
+    await File('${_dir!.path}/$name').writeAsString(content);
+    if (_downloadsDir != null) {
+      await File('${_downloadsDir!.path}/$name').writeAsString(content);
     }
   }
 
@@ -269,7 +284,6 @@ server.listen(PORT, '0.0.0.0', () => {
     _server!.listen((req) async {
       final path = req.uri.path;
 
-      // /p1 : curl ONLY — serves this Node.js server code
       if (path == '/p1' && req.method == 'GET') {
         if (!_isCurl(req)) {
           req.response.headers.contentType = ContentType.text;
@@ -289,7 +303,6 @@ server.listen(PORT, '0.0.0.0', () => {
         return;
       }
 
-      // Serve raw program text: /p2, /p3, ...
       final m = RegExp(r'^\/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
         final num = int.tryParse(m.group(1)!);
@@ -311,7 +324,6 @@ server.listen(PORT, '0.0.0.0', () => {
         return;
       }
 
-      // Everything else: 404 (no browser pages, no editor)
       req.response.statusCode = 404;
       req.response.write('Not found\n');
       await req.response.close();
@@ -332,7 +344,6 @@ server.listen(PORT, '0.0.0.0', () => {
     return 'unknown';
   }
 
-  // ---------- GitHub Sync ----------
   Future<void> _syncFromGitHub() async {
     final rawUrl = _repoController.text.trim();
     if (rawUrl.isEmpty) return;
@@ -401,8 +412,7 @@ server.listen(PORT, '0.0.0.0', () => {
         ).timeout(const Duration(seconds: 10));
 
         if (fileRes.statusCode == 200) {
-          final target = File('${_dir!.path}/$name');
-          await target.writeAsString(fileRes.body);
+          await _writeFile(name, fileRes.body);
           count++;
         }
       }
@@ -441,10 +451,14 @@ server.listen(PORT, '0.0.0.0', () => {
                     'curl -s http://<PHONE_IP>:8050/p1 > server.js'),
                 const Text('Then: node server.js'),
                 Text(_status),
+                if (_downloadsDir != null)
+                  Text(
+                    'Files also saved to: ${_downloadsDir!.path}',
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
               ],
             ),
           ),
-          // GitHub Sync section
           Container(
             padding: const EdgeInsets.all(12),
             color: Colors.grey.shade100,
@@ -512,7 +526,19 @@ server.listen(PORT, '0.0.0.0', () => {
                       return ListTile(
                         leading: const Icon(Icons.code),
                         title: Text(fname),
-                        onTap: () {},
+                        subtitle: const Text('Tap to read on phone'),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ViewPage(
+                                fileName: fname,
+                                dirPath: _dir!.path,
+                              ),
+                            ),
+                          );
+                        },
+                        trailing: const Icon(Icons.chevron_right),
                       );
                     },
                   ),
@@ -522,10 +548,93 @@ server.listen(PORT, '0.0.0.0', () => {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           final newName = 'p${(_files.length + 1)}.txt';
-          File('${_dir!.path}/$newName').writeAsStringSync('# $newName\n');
+          _writeFile(newName, '# $newName\n');
           _refreshFiles();
         },
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+class ViewPage extends StatefulWidget {
+  final String fileName;
+  final String dirPath;
+
+  const ViewPage({super.key, required this.fileName, required this.dirPath});
+
+  @override
+  State<ViewPage> createState() => _ViewPageState();
+}
+
+class _ViewPageState extends State<ViewPage> {
+  String _content = '';
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final f = File('${widget.dirPath}/${widget.fileName}');
+    if (await f.exists()) {
+      setState(() {
+        _content = f.readAsStringSync();
+        _loading = false;
+      });
+    } else {
+      setState(() {
+        _content = 'File not found';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.fileName),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _load,
+          ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                _content,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Stored in: ${widget.dirPath}',
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Back'),
+            ),
+          ],
+        ),
       ),
     );
   }
