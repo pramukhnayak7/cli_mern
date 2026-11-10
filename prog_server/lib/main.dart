@@ -47,7 +47,7 @@ class _HomePageState extends State<HomePage>
 
   // GitHub sync
   final TextEditingController _repoController = TextEditingController(
-    text: 'https://github.com/PranavBShenoy/Mern',
+    text: '',
   );
   bool _isSyncing = false;
   String _syncMsg = '';
