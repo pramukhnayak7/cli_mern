@@ -32,25 +32,19 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
-    with WidgetsBindingObserver {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Directory? _dir;
-  Directory? _downloadsDir;
   bool _serverStarted = false;
   String _ip = '...';
   List<String> _files = [];
   String _status = 'Starting server...';
   HttpServer? _server;
 
-  // GitHub sync
-  final TextEditingController _repoController = TextEditingController(
-    text: '',
-  );
+  final TextEditingController _repoController = TextEditingController(text: '');
   bool _isSyncing = false;
   String _syncMsg = '';
   String _ownerRepo = '';
 
-  // Notifications
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
 
@@ -126,7 +120,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Everything else: 404 (no browser pages, no editor)
+  // Everything else: 404
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not found\n');
   console.log('[' + ip + '] 404 ' + url);
@@ -162,12 +156,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      debugPrint('App resumed');
-    } else if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      debugPrint('App in background — server stays alive');
-    }
+    // Server keeps running in background
   }
 
   Future<void> _initNotifications() async {
@@ -216,12 +205,6 @@ server.listen(PORT, '0.0.0.0', () => {
     await WakelockPlus.enable();
 
     _dir = await getApplicationDocumentsDirectory();
-    _downloadsDir = await getDownloadsDirectory();
-    if (_downloadsDir == null) {
-      // Fallback to app documents if Downloads not available
-      _downloadsDir = _dir;
-    }
-
     await _ensureDefaults();
     _refreshFiles();
     await _startServer();
@@ -230,16 +213,15 @@ server.listen(PORT, '0.0.0.0', () => {
     if (!mounted) return;
     setState(() {
       _serverStarted = true;
-      _status = 'Server running on http://$_ip:8050 (background)';
+      _status = 'Server running on http://$_ip:8050';
     });
   }
 
   Future<void> _ensureDefaults() async {
-    for (int i = 2; i <= 5; i++) {
-      final content = '# Program $i\nprint("Hello from p$i")\n';
-      await File('${_dir!.path}/p$i.txt').writeAsString(content);
-      if (_downloadsDir != null) {
-        await File('${_downloadsDir!.path}/p$i.txt').writeAsString(content);
+    for (int i = 2; i <= 10; i++) {
+      final f = File('${_dir!.path}/p$i.txt');
+      if (!await f.exists()) {
+        await f.writeAsString('# Program $i\nprint("Hello from p$i")\n');
       }
     }
     final serverJs = File('${_dir!.path}/server.js');
@@ -250,17 +232,15 @@ server.listen(PORT, '0.0.0.0', () => {
 
   Future<void> _writeFile(String name, String content) async {
     await File('${_dir!.path}/$name').writeAsString(content);
-    if (_downloadsDir != null) {
-      await File('${_downloadsDir!.path}/$name').writeAsString(content);
-    }
   }
 
   Future<void> _refreshFiles() async {
+    if (_dir == null) return;
     final ents = await _dir!.list().toList();
     final list = ents
         .whereType<File>()
         .where((e) => e.path.endsWith('.txt'))
-        .map((e) => e.path.split('/').last)
+        .map((e) => p.basename(e.path))
         .toList();
     list.sort((a, b) {
       final ai = int.tryParse(a.replaceAll(RegExp(r'\D'), '')) ?? 0;
@@ -281,6 +261,7 @@ server.listen(PORT, '0.0.0.0', () => {
     _server!.listen((req) async {
       final path = req.uri.path;
 
+      // /p1 : curl ONLY — serves server.js
       if (path == '/p1' && req.method == 'GET') {
         if (!_isCurl(req)) {
           req.response.headers.contentType = ContentType.text;
@@ -300,10 +281,11 @@ server.listen(PORT, '0.0.0.0', () => {
         return;
       }
 
+      // Serve /p2, /p3, ... /pn program text
       final m = RegExp(r'^\/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
         final num = int.tryParse(m.group(1)!);
-        if (num == 1) {
+        if (num == null || num == 1) {
           req.response.statusCode = 404;
           req.response.write('Not found\n');
           await req.response.close();
@@ -321,6 +303,7 @@ server.listen(PORT, '0.0.0.0', () => {
         return;
       }
 
+      // Everything else: 404
       req.response.statusCode = 404;
       req.response.write('Not found\n');
       await req.response.close();
@@ -381,7 +364,7 @@ server.listen(PORT, '0.0.0.0', () => {
         setState(() {
           _isSyncing = false;
           _syncMsg =
-              '404: Repo "${ownerRepo ?? ''}" not found (check URL or make it public)';
+              '404: Repo "$ownerRepo" not found (check URL or make it public)';
         });
         return;
       }
@@ -448,11 +431,6 @@ server.listen(PORT, '0.0.0.0', () => {
                     'curl -s http://<PHONE_IP>:8050/p1 > server.js'),
                 const Text('Then: node server.js'),
                 Text(_status),
-                if (_downloadsDir != null)
-                  Text(
-                    'Files also saved to: ${_downloadsDir!.path}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
               ],
             ),
           ),
