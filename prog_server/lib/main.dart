@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:path/path.dart' as p;
 
 void main() {
   runApp(const ProgServerApp());
@@ -66,43 +66,29 @@ function getIP() {
   return '127.0.0.1';
 }
 
-function isCurl(req) {
-  const ua = req.headers['user-agent'] || '';
-  return /curl/i.test(ua);
-}
-
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
-  const ip = req.socket.remoteAddress;
 
-  // /p1 : curl ONLY — serves this Node.js server code (browsers get 404)
+  // /p1 serves server.js (download with: curl -s http://IP:8050/p1 > server.js)
   if (url === '/p1' && req.method === 'GET') {
-    if (!isCurl(req)) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found\n');
-      console.log('[' + ip + '] 404 /p1 (browser blocked)');
-      return;
-    }
     const f = path.join(__dirname, 'server.js');
     if (fs.existsSync(f)) {
       res.writeHead(200, { 'Content-Type': 'application/javascript' });
       res.end(fs.readFileSync(f, 'utf8'));
-      console.log('[' + ip + '] 200 /p1 (curl download -> server.js)');
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not found\n');
+      res.end('server.js not found\n');
     }
     return;
   }
 
-  // Serve raw program text: /p2, /p3, ...
+  // /p2, /p3, ... /pn serve program text files
   const m = url.match(/^\/p(\d+)$/);
   if (m && req.method === 'GET') {
     const num = parseInt(m[1], 10);
     if (num === 1) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found\n');
-      console.log('[' + ip + '] 404 /p1 (reserved)');
       return;
     }
     const file = path.join(DIR, 'p' + num + '.txt');
@@ -110,12 +96,10 @@ const server = http.createServer((req, res) => {
       if (err) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Program ' + num + ' not found\n');
-        console.log('[' + ip + '] 404 /p' + num);
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(data);
-      console.log('[' + ip + '] 200 /p' + num);
     });
     return;
   }
@@ -123,7 +107,6 @@ const server = http.createServer((req, res) => {
   // Everything else: 404
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not found\n');
-  console.log('[' + ip + '] 404 ' + url);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -132,10 +115,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(' Node.js Web Server — port ' + PORT);
   console.log(' Server:  http://' + ip + ':' + PORT);
   console.log(' Local:   http://localhost:' + PORT);
-  console.log(' Folder:  ' + DIR);
-  console.log(' Download server.js:');
-  console.log('   curl -s http://' + ip + ':' + PORT + '/p1 > server.js');
-  console.log('   node server.js');
+  console.log(' Download: curl -s http://' + ip + ':' + PORT + '/p1 > server.js');
   console.log(' Programs: /p2, /p3, ... /pn');
   console.log('========================================');
 });
@@ -156,7 +136,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Server keeps running in background
+    // Keep running in background
   }
 
   Future<void> _initNotifications() async {
@@ -164,16 +144,14 @@ server.listen(PORT, '0.0.0.0', () => {
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
     final InitializationSettings initializationSettings =
-        InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
+        InitializationSettings(android: initializationSettingsAndroid);
 
     await _notifications.initialize(initializationSettings);
 
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'prog_server_channel',
       'Prog Server',
-      description: 'Prog Server is running in background',
+      description: 'Prog Server is running',
       importance: Importance.low,
     );
 
@@ -185,7 +163,7 @@ server.listen(PORT, '0.0.0.0', () => {
     await _notifications.show(
       0,
       'Prog Server',
-      'Server running on port 8050\ncurl -s http://<PHONE_IP>:8050/p1 > server.js',
+      'Server running on port 8050',
       const NotificationDetails(
         android: AndroidNotificationDetails(
           'prog_server_channel',
@@ -230,10 +208,6 @@ server.listen(PORT, '0.0.0.0', () => {
     }
   }
 
-  Future<void> _writeFile(String name, String content) async {
-    await File('${_dir!.path}/$name').writeAsString(content);
-  }
-
   Future<void> _refreshFiles() async {
     if (_dir == null) return;
     final ents = await _dir!.list().toList();
@@ -251,37 +225,26 @@ server.listen(PORT, '0.0.0.0', () => {
     setState(() => _files = list);
   }
 
-  bool _isCurl(HttpRequest req) {
-    final ua = req.headers.value('user-agent') ?? '';
-    return RegExp(r'curl', caseSensitive: false).hasMatch(ua);
-  }
-
   Future<void> _startServer() async {
     _server = await HttpServer.bind(InternetAddress.anyIPv4, 8050);
     _server!.listen((req) async {
       final path = req.uri.path;
 
-      // /p1 : curl ONLY — serves server.js
+      // /p1 serves server.js
       if (path == '/p1' && req.method == 'GET') {
-        if (!_isCurl(req)) {
-          req.response.headers.contentType = ContentType.text;
-          req.response.write('Not found\n');
-          await req.response.close();
-          return;
-        }
         final f = File('${_dir!.path}/server.js');
         if (await f.exists()) {
           req.response.headers.contentType = ContentType.text;
           req.response.write(await f.readAsString());
         } else {
           req.response.statusCode = 404;
-          req.response.write('Not found\n');
+          req.response.write('server.js not found\n');
         }
         await req.response.close();
         return;
       }
 
-      // Serve /p2, /p3, ... /pn program text
+      // /p2, /p3, ... serve program text
       final m = RegExp(r'^\/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
         final num = int.tryParse(m.group(1)!);
@@ -392,7 +355,7 @@ server.listen(PORT, '0.0.0.0', () => {
         ).timeout(const Duration(seconds: 10));
 
         if (fileRes.statusCode == 200) {
-          await _writeFile(name, fileRes.body);
+          await File('${_dir!.path}/$name').writeAsString(fileRes.body);
           count++;
         }
       }
@@ -523,7 +486,7 @@ server.listen(PORT, '0.0.0.0', () => {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           final newName = 'p${(_files.length + 1)}.txt';
-          _writeFile(newName, '# $newName\n');
+          await File('${_dir!.path}/$newName').writeAsString('# $newName\n');
           _refreshFiles();
         },
         child: const Icon(Icons.add),
