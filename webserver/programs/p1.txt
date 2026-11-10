@@ -1,0 +1,4 @@
+print("Hello from program 1")
+x = 42
+y = x * 2
+print(y)

@@ -1,0 +1,7 @@
+# Program 9
+
+value = 100
+if value > 50:
+    print("Big")
+else:
+    print("Small")

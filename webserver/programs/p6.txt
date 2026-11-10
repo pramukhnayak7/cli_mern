@@ -1,0 +1,4 @@
+# Program 6
+
+name = "OpenCode"
+print(f"Welcome to {name}")
