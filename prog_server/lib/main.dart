@@ -33,8 +33,6 @@ class _HomePageState extends State<HomePage> {
   bool _serverStarted = false;
   String _ip = '...';
   List<String> _files = [];
-  String _selected = '';
-  String _content = '';
   String _status = 'Starting server...';
   HttpServer? _server;
 
@@ -56,42 +54,37 @@ function getIP() {
   return '127.0.0.1';
 }
 
-const LOCAL_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost'];
-
-bool isLocal(String? ip) {
-  if (ip == null) return false;
-  return LOCAL_IPS.contains(ip) || ip.startsWith('127.');
+function isCurl(req) {
+  const ua = req.headers['user-agent'] || '';
+  return /curl/i.test(ua);
 }
 
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   const ip = req.socket.remoteAddress;
 
-  const m = url.match(/^\\/p(\\d+)$/);
-
-  // Serve server.js download from anywhere
-  if (path == '/server.js' && req.method == 'GET') {
-    final f = File('${_dir!.path}/server.js');
-    if (await f.exists()) {
-      req.response.headers.contentType = ContentType.text;
-      req.response.write(await f.readAsString());
-    } else {
-      req.response.statusCode = 404;
-      req.response.write('Not found\\n');
+  // /server.js : curl ONLY (browsers get 404)
+  if (url === '/server.js' && req.method === 'GET') {
+    if (!isCurl(req)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found\\n');
+      console.log('[' + ip + '] 404 /server.js (browser blocked)');
+      return;
     }
-    await req.response.close();
+    const f = path.join(__dirname, 'server.js');
+    if (fs.existsSync(f)) {
+      res.writeHead(200, { 'Content-Type': 'application/javascript' });
+      res.end(fs.readFileSync(f, 'utf8'));
+      console.log('[' + ip + '] 200 /server.js (curl download)');
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found\\n');
+    }
     return;
   }
 
-  // Phone-only access: 404 for any external browser
-  if (!isLocal(ip)) {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not found\\n');
-    console.log('[' + ip + '] 404 BLOCKED ' + url);
-    return;
-  }
-
-  // Serve raw program text: /p1, /p2, ... (for curl)
+  // Serve raw program text: /p1, /p2, ...
+  const m = url.match(/^\\/p(\\d+)$/);
   if (m && req.method === 'GET') {
     const file = path.join(DIR, 'p' + m[1] + '.txt');
     fs.readFile(file, 'utf8', (err, data) => {
@@ -108,9 +101,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Everything else: 404 (no browser pages, no editor)
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('Not found\\n');
-  console.log('[' + ip + '] 404 ' + req.url);
+  console.log('[' + ip + '] 404 ' + url);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
@@ -120,7 +114,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(' Server:  http://' + ip + ':' + PORT);
   console.log(' Local:   http://localhost:' + PORT);
   console.log(' Folder:  ' + DIR);
-  console.log(' Example: curl -s http://' + ip + ':' + PORT + '/p1 | xclip -selection clipboard');
+  console.log(' Download server.js:');
+  console.log('   curl -s http://' + ip + ':' + PORT + '/server.js > server.js');
+  console.log(' Programs: /p1, /p2, ... /pn');
   console.log('========================================');
 });
 ''';
@@ -173,26 +169,37 @@ server.listen(PORT, '0.0.0.0', () => {
     setState(() => _files = list);
   }
 
+  bool _isCurl(HttpRequest req) {
+    final ua = req.headers.value('user-agent') ?? '';
+    return RegExp(r'curl', caseSensitive: false).hasMatch(ua);
+  }
+
   Future<void> _startServer() async {
     _server = await HttpServer.bind(InternetAddress.anyIPv4, 8050);
     _server!.listen((req) async {
       final path = req.uri.path;
 
-      // Serve server.js file for download: /server.js
+      // /server.js : curl ONLY (browsers get 404)
       if (path == '/server.js' && req.method == 'GET') {
+        if (!_isCurl(req)) {
+          req.response.headers.contentType = ContentType.text;
+          req.response.write('Not found\\n');
+          await req.response.close();
+          return;
+        }
         final f = File('${_dir!.path}/server.js');
         if (await f.exists()) {
           req.response.headers.contentType = ContentType.text;
           req.response.write(await f.readAsString());
         } else {
           req.response.statusCode = 404;
-          req.response.write('Not found');
+          req.response.write('Not found\\n');
         }
         await req.response.close();
         return;
       }
 
-      // Serve raw program text: /p1, /p2, ... (for curl)
+      // Serve raw program text: /p1, /p2, ...
       final m = RegExp(r'^/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
         final f = File('${_dir!.path}/p${m.group(1)!}.txt');
@@ -201,81 +208,17 @@ server.listen(PORT, '0.0.0.0', () => {
           req.response.write(await f.readAsString());
         } else {
           req.response.statusCode = 404;
-          req.response.write('Not found');
+          req.response.write('Program ${m.group(1)} not found\\n');
         }
         await req.response.close();
         return;
       }
 
-      // Admin web page served by the app itself
-      if ((path == '/' || path == '/admin') && req.method == 'GET') {
-        req.response.headers.contentType = ContentType.html;
-        req.response.write(_adminHtml());
-        await req.response.close();
-        return;
-      }
-
-      // API: list files
-      if (path == '/api/files' && req.method == 'GET') {
-        final ents = await _dir!.list().toList();
-        final list = ents
-            .whereType<File>()
-            .where((e) => e.path.endsWith('.txt'))
-            .map((e) => e.path.split('/').last)
-            .toList();
-        req.response.headers.contentType = ContentType.json;
-        req.response.write(jsonEncode(list));
-        await req.response.close();
-        return;
-      }
-
-      // API: get file
-      if (path.startsWith('/api/get/') && req.method == 'GET') {
-        final name = path.substring('/api/get/'.length);
-        final f = File('${_dir!.path}/$name');
-        if (await f.exists()) {
-          req.response.headers.contentType = ContentType.text;
-          req.response.write(await f.readAsString());
-        } else {
-          req.response.statusCode = 404;
-        }
-        await req.response.close();
-        return;
-      }
-
-      // API: save file
-      if (path == '/api/save' && req.method == 'POST') {
-        final body = await utf8.decoder.bind(req).join();
-        final params = _parseQuery(body);
-        final file = params['file'] ?? '';
-        final content = params['content'] ?? '';
-        if (_isValidFile(file)) {
-          await File('${_dir!.path}/$file').writeAsString(content);
-          req.response.write('OK');
-        } else {
-          req.response.statusCode = 400;
-          req.response.write('Bad file');
-        }
-        await req.response.close();
-        return;
-      }
-
+      // Everything else: 404 (no browser pages, no editor)
       req.response.statusCode = 404;
+      req.response.write('Not found\\n');
       await req.response.close();
     });
-  }
-
-  bool _isValidFile(String name) => RegExp(r'^p\d+\.txt$').hasMatch(name);
-
-  Map<String, String> _parseQuery(String body) {
-    final map = <String, String>{};
-    for (final part in body.split('&')) {
-      final kv = part.split('=');
-      if (kv.length == 2) {
-        map[Uri.decodeComponent(kv[0])] = Uri.decodeComponent(kv[1]);
-      }
-    }
-    return map;
   }
 
   Future<String> _getIP() async {
@@ -290,23 +233,6 @@ server.listen(PORT, '0.0.0.0', () => {
       }
     } catch (_) {}
     return 'unknown';
-  }
-
-  Future<void> _load(String file) async {
-    final f = File('${_dir!.path}/$file');
-    if (!mounted) return;
-    setState(() {
-      _selected = file;
-      _content = f.existsSync() ? f.readAsStringSync() : '';
-    });
-  }
-
-  Future<void> _save() async {
-    if (_selected.isEmpty) return;
-    await File('${_dir!.path}/$_selected').writeAsString(_content);
-    await _refreshFiles();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
   }
 
   @override
@@ -325,8 +251,7 @@ server.listen(PORT, '0.0.0.0', () => {
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 const Text(
                     'curl -s http://<PHONE_IP>:8050/server.js > server.js'),
-                const Text(
-                    'Then: node server.js'),
+                const Text('Then: node server.js'),
                 Text(_status),
               ],
             ),
@@ -341,65 +266,11 @@ server.listen(PORT, '0.0.0.0', () => {
                       return ListTile(
                         leading: const Icon(Icons.code),
                         title: Text(fname),
-                        selected: _selected == fname,
-                        onTap: () => _load(fname),
+                        onTap: () {},
                       );
                     },
                   ),
           ),
-          if (_selected.isNotEmpty)
-            Container(
-              height: 260,
-              color: Colors.grey.shade100,
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(_selected,
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => setState(() {
-                          _selected = '';
-                          _content = '';
-                        }),
-                      ),
-                    ],
-                  ),
-                  Expanded(
-                    child: TextField(
-                      maxLines: null,
-                      expands: true,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        hintText: 'Edit program text...',
-                      ),
-                      onChanged: (v) => _content = v,
-                      controller: TextEditingController(text: _content),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: _save,
-                        icon: const Icon(Icons.save),
-                        label: const Text('Save'),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _refreshFiles,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Rescan'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
@@ -412,32 +283,4 @@ server.listen(PORT, '0.0.0.0', () => {
       ),
     );
   }
-
-  String _adminHtml() => '''
-<!DOCTYPE html><html><head><meta charset="utf-8"><title>Prog Editor</title></head><body>
-<h2>Program Editor</h2>
-<p><a href="/server.js">Download server.js</a></p>
-<ul id="list"></ul>
-<script>
-fetch('/api/files').then(r=>r.json()).then(files=>{
-  const ul=document.getElementById('list');
-  files.forEach(function(name){
-    const li=document.createElement('li');
-    li.innerHTML='<a href="/p'+name.replace(".txt","")+'" target="_blank">'+name+'</a> ';
-    const b=document.createElement('button'); b.textContent='Edit'; b.onclick=function(){
-      fetch('/api/get/'+name).then(r=>r.text()).then(c=>{
-        const nc=prompt('Edit '+name+':', c);
-        if(nc!==null){
-          fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'file='+encodeURIComponent(name)+'&content='+encodeURIComponent(nc)})
-            .then(()=>location.reload());
-        }
-      });
-    };
-    li.appendChild(b);
-    ul.appendChild(li);
-  });
-});
-</script>
-</body></html>
-''';
 }
