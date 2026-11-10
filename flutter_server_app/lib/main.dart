@@ -71,19 +71,19 @@ const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
   const ip = req.socket.remoteAddress;
 
-  // /server.js : curl ONLY (browsers get 404)
-  if (url === '/server.js' && req.method === 'GET') {
+  // /p1 : curl ONLY — serves this Node.js server code (browsers get 404)
+  if (url === '/p1' && req.method === 'GET') {
     if (!isCurl(req)) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found\n');
-      console.log('[' + ip + '] 404 /server.js (browser blocked)');
+      console.log('[' + ip + '] 404 /p1 (browser blocked)');
       return;
     }
     const f = path.join(__dirname, 'server.js');
     if (fs.existsSync(f)) {
       res.writeHead(200, { 'Content-Type': 'application/javascript' });
       res.end(fs.readFileSync(f, 'utf8'));
-      console.log('[' + ip + '] 200 /server.js (curl download)');
+      console.log('[' + ip + '] 200 /p1 (curl download -> server.js)');
     } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found\n');
@@ -91,20 +91,28 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Serve raw program text: /p1, /p2, ...
+  // Serve raw program text: /p2, /p3, ...
   const m = url.match(/^\/p(\d+)$/);
   if (m && req.method === 'GET') {
-    const file = path.join(DIR, 'p' + m[1] + '.txt');
+    const num = parseInt(m[1], 10);
+    if (num === 1) {
+      // /p1 is reserved for server.js download above
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not found\n');
+      console.log('[' + ip + '] 404 /p1 (reserved)');
+      return;
+    }
+    const file = path.join(DIR, 'p' + num + '.txt');
     fs.readFile(file, 'utf8', (err, data) => {
       if (err) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Program ' + m[1] + ' not found\n');
-        console.log('[' + ip + '] 404 /p' + m[1]);
+        res.end('Program ' + num + ' not found\n');
+        console.log('[' + ip + '] 404 /p' + num);
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end(data);
-      console.log('[' + ip + '] 200 /p' + m[1]);
+      console.log('[' + ip + '] 200 /p' + num);
     });
     return;
   }
@@ -123,8 +131,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(' Local:   http://localhost:' + PORT);
   console.log(' Folder:  ' + DIR);
   console.log(' Download server.js:');
-  console.log('   curl -s http://' + ip + ':' + PORT + '/server.js > server.js');
-  console.log(' Programs: /p1, /p2, ... /pn');
+  console.log('   curl -s http://' + ip + ':' + PORT + '/p1 > server.js');
+  console.log('   node server.js');
+  console.log(' Programs: /p2, /p3, ... /pn');
   console.log('========================================');
 });
 ''';
@@ -149,7 +158,7 @@ server.listen(PORT, '0.0.0.0', () => {
   }
 
   Future<void> _ensureDefaults() async {
-    for (int i = 1; i <= 5; i++) {
+    for (int i = 2; i <= 5; i++) {
       final f = File('${_dir!.path}/p$i.txt');
       if (!await f.exists()) {
         await f.writeAsString('# Program $i\nprint("Hello from p$i")\n');
@@ -187,8 +196,8 @@ server.listen(PORT, '0.0.0.0', () => {
     _server!.listen((req) async {
       final path = req.uri.path;
 
-      // /server.js : curl ONLY (browsers get 404)
-      if (path == '/server.js' && req.method == 'GET') {
+      // /p1 : curl ONLY — serves this Node.js server code
+      if (path == '/p1' && req.method == 'GET') {
         if (!_isCurl(req)) {
           req.response.headers.contentType = ContentType.text;
           req.response.write('Not found\n');
@@ -207,16 +216,23 @@ server.listen(PORT, '0.0.0.0', () => {
         return;
       }
 
-      // Serve raw program text: /p1, /p2, ...
+      // Serve raw program text: /p2, /p3, ...
       final m = RegExp(r'^\/p(\d+)$').firstMatch(path);
       if (m != null && req.method == 'GET') {
-        final f = File('${_dir!.path}/p${m.group(1)!}.txt');
+        final num = int.tryParse(m.group(1)!);
+        if (num == 1) {
+          req.response.statusCode = 404;
+          req.response.write('Not found\n');
+          await req.response.close();
+          return;
+        }
+        final f = File('${_dir!.path}/p$num.txt');
         if (await f.exists()) {
           req.response.headers.contentType = ContentType.text;
           req.response.write(await f.readAsString());
         } else {
           req.response.statusCode = 404;
-          req.response.write('Program ${m.group(1)} not found\n');
+          req.response.write('Program $num not found\n');
         }
         await req.response.close();
         return;
@@ -248,7 +264,6 @@ server.listen(PORT, '0.0.0.0', () => {
     final rawUrl = _repoController.text.trim();
     if (rawUrl.isEmpty) return;
 
-    // Parse GitHub repo URL -> owner/repo
     String? ownerRepo;
     try {
       final uri = Uri.parse(rawUrl);
@@ -268,7 +283,6 @@ server.listen(PORT, '0.0.0.0', () => {
     });
 
     try {
-      // GitHub API: list repo contents
       final apiUrl = Uri.https('api.github.com', '/repos/$ownerRepo/contents');
       final res = await http.get(
         apiUrl,
@@ -292,10 +306,8 @@ server.listen(PORT, '0.0.0.0', () => {
         final downloadUrl = item['download_url'] as String?;
         if (type != 'file' || name == null || downloadUrl == null) continue;
 
-        // Only .txt files
         if (!name.endsWith('.txt')) continue;
 
-        // Download file content
         final fileRes = await http.get(
           Uri.parse(downloadUrl),
         ).timeout(const Duration(seconds: 10));
@@ -338,7 +350,7 @@ server.listen(PORT, '0.0.0.0', () => {
                 Text('Server: http://$_ip:8050',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
                 const Text(
-                    'curl -s http://<PHONE_IP>:8050/server.js > server.js'),
+                    'curl -s http://<PHONE_IP>:8050/p1 > server.js'),
                 const Text('Then: node server.js'),
                 Text(_status),
               ],
