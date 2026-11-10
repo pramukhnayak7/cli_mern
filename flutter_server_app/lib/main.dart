@@ -484,7 +484,7 @@ server.listen(PORT, '0.0.0.0', () => {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
+        onPressed: () async {
           final newName = 'p${(_files.length + 1)}.txt';
           await File('${_dir!.path}/$newName').writeAsString('# $newName\n');
           _refreshFiles();
