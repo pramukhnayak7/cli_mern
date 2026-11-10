@@ -2,10 +2,19 @@
     package="com.example.prog_server">
   <!-- Needed so other devices on Wi-Fi can curl http://<PHONE_IP>:8050/p1 -->
   <uses-permission android:name="android.permission.INTERNET" />
+  <!-- Keep CPU awake so server doesn't die when screen locks -->
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <!-- Foreground service so Android doesn't kill background process -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <!-- Post notifications (Android 13+) -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
   <application
       android:label="prog_server"
       android:name="${applicationName}"
-      android:icon="@mipmap/ic_launcher">
+      android:icon="@mipmap/ic_launcher"
+      android:usesCleartextTraffic="true">
       <activity
           android:name=".MainActivity"
           android:exported="true"
@@ -13,7 +22,8 @@
           android:theme="@style/LaunchTheme"
           android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
           android:hardwareAccelerated="true"
-          android:windowSoftInputMode="adjustResize">
+          android:windowSoftInputMode="adjustResize"
+          android:keepScreenOn="true">
           <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme" />

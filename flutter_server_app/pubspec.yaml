@@ -1,5 +1,5 @@
 name: prog_server
-description: Android app that hosts a web server serving p1.txt, p2.txt, ... with curl-only download and GitHub sync
+description: Android app that hosts a web server in background serving p1.txt, p2.txt, ...
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,6 +11,8 @@ dependencies:
     sdk: flutter
   path_provider: ^2.1.1
   http: ^1.1.0
+  wakelock_plus: ^9.0.0
+  flutter_local_notifications: ^18.0.0
 
 dev_dependencies:
   flutter_test:

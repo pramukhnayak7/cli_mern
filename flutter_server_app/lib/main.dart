@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 void main() {
   runApp(const ProgServerApp());
@@ -29,7 +31,8 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with WidgetsBindingObserver {
   Directory? _dir;
   bool _serverStarted = false;
   String _ip = '...';
@@ -44,6 +47,10 @@ class _HomePageState extends State<HomePage> {
   bool _isSyncing = false;
   String _syncMsg = '';
   String _ownerRepo = '';
+
+  // Notifications
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
 
   static const String serverJsCode = r'''const http = require('http');
 const fs = require('fs');
@@ -97,7 +104,6 @@ const server = http.createServer((req, res) => {
   if (m && req.method === 'GET') {
     const num = parseInt(m[1], 10);
     if (num === 1) {
-      // /p1 is reserved for server.js download above
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not found\n');
       console.log('[' + ip + '] 404 /p1 (reserved)');
@@ -142,19 +148,85 @@ server.listen(PORT, '0.0.0.0', () => {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Keep server running in background — do NOT dispose it
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed');
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      debugPrint('App in background — server stays alive');
+    }
+  }
+
+  Future<void> _initNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+
+    await _notifications.initialize(initializationSettings);
+
+    // Create notification channel for foreground service
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'prog_server_channel',
+      'Prog Server',
+      description: 'Prog Server is running in background',
+      importance: Importance.low,
+    );
+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // Show ongoing notification so Android doesn't kill the background process
+    await _notifications.show(
+      0,
+      'Prog Server',
+      'Server running on port 8050\ncurl -s http://<PHONE_IP>:8050/p1 > server.js',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'prog_server_channel',
+          'Prog Server',
+          channelDescription: 'Prog Server background service',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          showWhen: false,
+        ),
+      ),
+    );
+  }
+
   Future<void> _init() async {
+    // Keep phone awake so server doesn't die when screen locks
+    await WakelockPlus.enable();
+
     _dir = await getApplicationDocumentsDirectory();
     await _ensureDefaults();
     _refreshFiles();
     await _startServer();
+    await _initNotifications();
     _ip = await _getIP();
     if (!mounted) return;
     setState(() {
       _serverStarted = true;
-      _status = 'Server running on http://$_ip:8050';
+      _status = 'Server running on http://$_ip:8050 (background)';
     });
   }
 
@@ -300,7 +372,8 @@ server.listen(PORT, '0.0.0.0', () => {
       if (res.statusCode == 404) {
         setState(() {
           _isSyncing = false;
-          _syncMsg = '404: Repo "$ownerRepo" not found (check URL or make it public)';
+          _syncMsg =
+              '404: Repo "$ownerRepo" not found (check URL or make it public)';
         });
         return;
       }
@@ -406,11 +479,12 @@ server.listen(PORT, '0.0.0.0', () => {
                     ),
                   ],
                 ),
-                if (_syncMsg.isNotEmpty)
+                if (_syncMsg.isNotEmpty) ...[
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text('Repo: $_ownerRepo',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.grey)),
                   ),
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -424,6 +498,7 @@ server.listen(PORT, '0.0.0.0', () => {
                           fontSize: 12,
                         )),
                   ),
+                ],
               ],
             ),
           ),
