@@ -84,7 +84,7 @@ const server = http.createServer((req, res) => {
   }
 
   // Serve raw program text: /p1, /p2, ...
-  const m = url.match(/^\\/p(\\d+)$/);
+  const m = url.match(/^\\/p(\\d+)\\$/);
   if (m && req.method === 'GET') {
     const file = path.join(DIR, 'p' + m[1] + '.txt');
     fs.readFile(file, 'utf8', (err, data) => {
